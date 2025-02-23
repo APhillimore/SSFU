@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Source</title>
+  </head>
+  <body>
+    <h1>Source</h1>
+    <video id="video" autoplay playsinline></video>
+    <div id="messages"></div>
+    <script>
+      console.log("source.html");
+      async function main() {
+        const id = "source_123";
+        console.log("main");
+        const peer = new RTCPeerConnection();
+
+        peer.onicecandidate = (event) => {
+          if (event.candidate) {
+            ws.send(
+              JSON.stringify({
+                type: "candidate",
+                candidate: event.candidate,
+                id: id,
+              }),
+            );
+          }
+        };
+
+        const stream = await window.navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+        peer.addTrack(stream.getVideoTracks()[0], stream);
+        video.srcObject = stream;
+
+        const wsUrl = "ws://localhost:8081/signalling?id=" + id;
+        const ws = new WebSocket(wsUrl);
+
+        window.onbeforeunload = () => {
+          console.log("onbeforeunload");
+          ws.close();
+        };
+
+        ws.onopen = () => {
+          console.log("connected to server");
+          messages.innerHTML += `<p>connected to server</p>`;
+        };
+
+        ws.onmessage = async (event) => {
+          const messages = document.getElementById("messages");
+          messages.innerHTML += `<p>${event.type}</p>`;
+          const data = JSON.parse(event.data);
+          if (data.type === "signalling_ready") {
+            console.log("signalling ready");
+            messages.innerHTML += `<p>signalling ready</p>`;
+            peer.createOffer().then((offer) => {
+              peer.setLocalDescription(offer);
+              ws.send(
+                JSON.stringify({
+                  type: "offer",
+                  sdp: offer.sdp,
+                  id: id,
+                }),
+              );
+            });
+          } else if (data.type === "answer") {
+            console.log("answer");
+            messages.innerHTML += `<p>answer</p>`;
+            peer.setRemoteDescription(
+              new RTCSessionDescription({
+                type: "answer",
+                sdp: data.sdp,
+              }),
+            );
+          } else if (data.type === "candidate") {
+            console.log("received candidate");
+            messages.innerHTML += `<p>received candidate</p>`;
+            await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        };
+
+        setTimeout(() => {
+          ws.send(
+            JSON.stringify({
+              type: "join_room",
+              id: id,
+              room: "test",
+              member_type: "source",
+            }),
+          );
+        }, 2000);
+      }
+
+      main();
+    </script>
+  </body>
+</html>
