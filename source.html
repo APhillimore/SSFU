@@ -4,23 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Source</title>
-    <script src="perfect-negotiation.js" type="module"></script>
   </head>
   <body>
     <h1>Source</h1>
     <video id="video" autoplay playsinline></video>
     <div id="messages"></div>
-    <script>
+    <script type="module">
+      import perfectNegotiation from "./perfect-negotiation.js";
+
       const wsUrl = "ws://localhost:8081/signalling";
       const ws = new WebSocket(wsUrl);
-      window.navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false,
-      }).then((stream) => {
-        const peer = perfectNegotiation({ signalServer: ws, isPolite: false });
-        peer.addTrack(stream.getVideoTracks()[0], stream);
-        video.srcObject = stream;
-      })
+      window.navigator.mediaDevices
+        .getUserMedia({
+          video: true,
+          audio: false,
+        })
+        .then((stream) => {
+          const peer = new RTCPeerConnection();
+          const peerNegotiation = perfectNegotiation({
+            signalServer: ws,
+            isPolite: false,
+            peerConnection: peer,
+          });
+          peer.addTrack(stream.getVideoTracks()[0], stream);
+          video.srcObject = stream;
+        });
       // console.log("source.html");
       // async function main() {
       //   const id = "source_123";

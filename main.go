@@ -24,10 +24,14 @@ func sourceHTMLHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "source.html")
 }
 
+func perfectNegotiationHTMLHandler(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "perfect-negotiation.js")
+}
+
 func main() {
 	log.Println("Starting server on", *addr)
 	flag.Parse()
-	wsServer := signalling.NewWebSocketServer()
+	wsServer := signalling.NewWebSocketWebRTCSignallingServer()
 
 	// Create a channel to listen for interrupt signals
 	stop := make(chan os.Signal, 1)
@@ -41,7 +45,7 @@ func main() {
 	http.HandleFunc("/signalling", wsServer.HandleWsSignalling)
 	http.HandleFunc("/viewer", viewerHTMLHandler)
 	http.HandleFunc("/source", sourceHTMLHandler)
-
+	http.HandleFunc("/perfect-negotiation.js", perfectNegotiationHTMLHandler)
 	// Start server in goroutine
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -4,13 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Viewer</title>
-    <script src="perfect-negotiation.js" type="module"></script>
   </head>
   <body>
     <h1>Viewer</h1>
     <video id="video" autoplay playsinline muted></video>
     <div id="messages"></div>
-    <script>
+    <script type="module">
+      import perfectNegotiation from "./perfect-negotiation.js";
+
       const wsUrl = "ws://localhost:8081/signalling"; //?id=" + id;
       const ws = new WebSocket(wsUrl);
       const peer = perfectNegotiation({ signalServer: ws, isPolite: false });

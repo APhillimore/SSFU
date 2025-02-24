@@ -10,23 +10,25 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-type WebSocketServer struct {
+type WebSocketWebRTCSignallingServer struct {
 	upgrader      websocket.Upgrader
 	connections   map[string]*websocket.Conn
 	connectionsMu sync.Mutex
 }
 
-func NewWebSocketServer() *WebSocketServer {
-	return &WebSocketServer{
+func NewWebSocketWebRTCSignallingServer() *WebSocketWebRTCSignallingServer {
+	return &WebSocketWebRTCSignallingServer{
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
 		},
+		connections:   make(map[string]*websocket.Conn),
+		connectionsMu: sync.Mutex{},
 	}
 }
 
-func (s *WebSocketServer) HandleWsSignalling(w http.ResponseWriter, r *http.Request) {
+func (s *WebSocketWebRTCSignallingServer) HandleWsSignalling(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Upgrade error: %v", err)
@@ -46,7 +48,6 @@ func (s *WebSocketServer) HandleWsSignalling(w http.ResponseWriter, r *http.Requ
 		},
 	}
 
-	// Create Peer Connection
 	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {
 		log.Println("error creating peer connection:", err)
@@ -57,7 +58,7 @@ func (s *WebSocketServer) HandleWsSignalling(w http.ResponseWriter, r *http.Requ
 
 }
 
-func (s *WebSocketServer) Shutdown() {
+func (s *WebSocketWebRTCSignallingServer) Shutdown() {
 	s.connectionsMu.Lock()
 	defer s.connectionsMu.Unlock()
 	for _, conn := range s.connections {
