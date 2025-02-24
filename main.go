@@ -35,7 +35,8 @@ type WebSocketServer struct {
 
 	upgrader websocket.Upgrader
 
-	rooms map[string]*signalling.Room
+	rooms   map[string]*signalling.Room
+	roomsMu sync.Mutex
 
 	// rooms   map[string]*signalling.Room
 	// roomsMu sync.Mutex
@@ -75,14 +76,16 @@ func (s *WebSocketServer) handleJoinRoom(peer *signalling.Peer, message []byte) 
 }
 
 func (s *WebSocketServer) handlePeerClose(peer *signalling.Peer) {
+	s.roomsMu.Lock()
+	defer s.roomsMu.Unlock()
 	for _, room := range s.rooms {
 		room.RemovePeer(peer.ID)
 	}
 	peer.Close()
 
 	s.peersMu.Lock()
+	defer s.peersMu.Unlock()
 	delete(s.peers, peer.ID)
-	s.peersMu.Unlock()
 }
 
 func (s *WebSocketServer) handleClientClose(conn *websocket.Conn) {

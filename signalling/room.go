@@ -143,7 +143,7 @@ func (r *Room) AddPeer(peer *Peer, peerType RoomPeerType) {
 				ID:   peer.ID,
 			})
 		})
-		peer.Peer.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		peer.AddOnConnectionStateChangeHandler(func(state webrtc.PeerConnectionState) {
 			log.Printf("\033[32mViewer %s connection state changed to %s\033[0m", peer.ID, state)
 
 			if state == webrtc.PeerConnectionStateConnected {

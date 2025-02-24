@@ -20,9 +20,10 @@ type Peer struct {
 	ID                                 string
 	Peer                               *webrtc.PeerConnection
 	Conn                               *websocket.Conn
-	OnTrackHandlers                    []func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, localTrack *webrtc.TrackLocalStaticRTP)
 	LocalTracks                        map[string]*webrtc.TrackLocalStaticRTP
 	LocalTracksMu                      sync.RWMutex
+	OnConnectionStateChangeHandlers    []func(connectionState webrtc.PeerConnectionState)
+	OnTrackHandlers                    []func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, localTrack *webrtc.TrackLocalStaticRTP)
 	OnICEConnectionStateChangeHandlers []func(connectionState webrtc.ICEConnectionState)
 	OnNegotiationNeededHandlers        []func()
 	Negotiating                        bool
@@ -32,15 +33,15 @@ type Peer struct {
 
 func NewPeer(id string, conn *websocket.Conn) (*Peer, error) {
 	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{
-					"stun:stun.l.google.com:19302",
-					"stun:stun1.l.google.com:19302",
-					"stun:stun2.l.google.com:19302",
-				},
-			},
-		},
+		// ICEServers: []webrtc.ICEServer{
+		// 	{
+		// 		URLs: []string{
+		// 			"stun:stun.l.google.com:19302",
+		// 			"stun:stun1.l.google.com:19302",
+		// 			"stun:stun2.l.google.com:19302",
+		// 		},
+		// 	},
+		// },
 	}
 	peerConnection, err := webrtc.NewPeerConnection(config)
 	if err != nil {
@@ -48,15 +49,26 @@ func NewPeer(id string, conn *websocket.Conn) (*Peer, error) {
 	}
 
 	peer := &Peer{
-		ID:                                 id,
-		Peer:                               peerConnection,
-		Conn:                               conn,
+		ID:            id,
+		Peer:          peerConnection,
+		Conn:          conn,
+		LocalTracks:   make(map[string]*webrtc.TrackLocalStaticRTP),
+		LocalTracksMu: sync.RWMutex{},
+
+		OnConnectionStateChangeHandlers: make([]func(connectionState webrtc.PeerConnectionState), 0),
+
 		OnTrackHandlers:                    make([]func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, localTrack *webrtc.TrackLocalStaticRTP), 0),
-		LocalTracks:                        make(map[string]*webrtc.TrackLocalStaticRTP),
 		OnICEConnectionStateChangeHandlers: make([]func(connectionState webrtc.ICEConnectionState), 0),
-		OnNegotiationNeededHandlers:        make([]func(), 0),
-		Negotiating:                        false,
+
+		OnNegotiationNeededHandlers: make([]func(), 0),
+		Negotiating:                 false,
 	}
+
+	peerConnection.OnConnectionStateChange(func(connectionState webrtc.PeerConnectionState) {
+		for _, handler := range peer.OnConnectionStateChangeHandlers {
+			handler(connectionState)
+		}
+	})
 
 	peerConnection.OnTrack(func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		fmt.Println("New track received:", remoteTrack.ID(), "Kind:", remoteTrack.Kind())
@@ -85,9 +97,16 @@ func NewPeer(id string, conn *websocket.Conn) (*Peer, error) {
 	})
 
 	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		if candidate != nil {
-			fmt.Println(peer.ID, " ICE candidate:", candidate.ToJSON().Candidate)
+		if candidate == nil {
+			return
 		}
+		log.Println("\033[32m", peer.ID, " ICE candidate:", candidate.ToJSON().Candidate, "\033[0m")
+		conn.WriteJSON(CandidateStruct{
+			ID:        peer.ID,
+			Candidate: candidate.ToJSON(),
+			Type:      "candidate",
+		})
+
 	})
 
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
@@ -160,6 +179,10 @@ func (p *Peer) ConvertTrack(remoteTrack *webrtc.TrackRemote) (*webrtc.TrackLocal
 
 func (p *Peer) Close() error {
 	return p.Peer.Close()
+}
+
+func (p *Peer) AddOnConnectionStateChangeHandler(handler func(connectionState webrtc.PeerConnectionState)) {
+	p.OnConnectionStateChangeHandlers = append(p.OnConnectionStateChangeHandlers, handler)
 }
 
 func (p *Peer) AddOnTrackHandler(handler func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, localTrack *webrtc.TrackLocalStaticRTP)) {
