@@ -23,19 +23,6 @@ func NewPerfectNegotiation(peerConn *webrtc.PeerConnection, signalServer *websoc
 
 // Initialize WebRTC
 func (p *PerfectNegotiation) Negotiate(pc *webrtc.PeerConnection) *webrtc.PeerConnection {
-	// WebRTC configuration
-	// config := webrtc.Configuration{
-	// 	ICEServers: []webrtc.ICEServer{
-	// 		{URLs: []string{"stun:stun.l.google.com:19302"}},
-	// 	},
-	// }
-
-	// Create Peer Connection
-	// pc, err := webrtc.NewPeerConnection(config)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
 	// Handle negotiation needed
 	p.peerConn.OnNegotiationNeeded(func() {
 		p.makingOfferMu.Lock()
@@ -169,23 +156,3 @@ func (p *PerfectNegotiation) sendSignal(data interface{}) {
 		log.Println("Error sending signal:", err)
 	}
 }
-
-// Connect to the WebSocket signaling server
-// func connectToSignalingServer() {
-// 	var err error
-// 	signalSocket, _, err = websocket.DefaultDialer.Dial("wss://your-signaling-server.com", nil)
-// 	if err != nil {
-// 		log.Fatal("Error connecting to signaling server:", err)
-// 	}
-// 	log.Println("Connected to signaling server")
-
-// 	go handleSignalingMessages()
-// }
-
-// func main() {
-// 	log.Println("Starting WebRTC Peer...")
-// 	connectToSignalingServer()
-// 	peerConn = createPeerConnection()
-
-// 	select {} // Keep running
-// }
