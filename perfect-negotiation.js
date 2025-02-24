@@ -16,7 +16,9 @@ const perfectNegotiation = async ({
     try {
       makingOffer = true;
       await peerConnection.setLocalDescription();
-      signalServer.send({ description: peerConnection.localDescription });
+      signalServer.send(
+        JSON.stringify({ description: peerConnection.localDescription }),
+      );
     } catch (err) {
       console.error(err);
     } finally {
@@ -40,7 +42,9 @@ const perfectNegotiation = async ({
             makingOffer = false;
             await peerConnection.setRemoteDescription(description);
             await peerConnection.setLocalDescription();
-            signalServer.send({ description: peerConnection.localDescription });
+            signalServer.send(
+              JSON.stringify({ description: peerConnection.localDescription }),
+            );
           } else {
             console.log(
               "Offer collision detected: Impolite peer ignores and proceeds.",
@@ -53,7 +57,9 @@ const perfectNegotiation = async ({
         await peerConnection.setRemoteDescription(description);
         if (description.type === "offer") {
           await peerConnection.setLocalDescription();
-          signalServer.send({ description: peerConnection.localDescription });
+          signalServer.send(
+            JSON.stringify({ description: peerConnection.localDescription }),
+          );
         }
       } else if (candidate) {
         await peerConnection.addIceCandidate(candidate);

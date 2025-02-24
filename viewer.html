@@ -14,137 +14,18 @@
 
       const wsUrl = "ws://localhost:8081/signalling"; //?id=" + id;
       const ws = new WebSocket(wsUrl);
-      const peer = perfectNegotiation({ signalServer: ws, isPolite: false });
+      const peer = new RTCPeerConnection();
+      const peerNegotiation = perfectNegotiation({
+        signalServer: ws,
+        isPolite: false,
+        peerConnection: peer,
+      });
       peer.ontrack = (event) => {
         console.log("ontrack", event);
         if (event.track.kind === "video") {
           video.srcObject = event.streams[0];
         }
       };
-
-      // const main = async () => {
-      //   const id = "viewer_456";
-      //   const wsUrl = "ws://localhost:8081/signalling?id=" + id;
-      //   const ws = new WebSocket(wsUrl);
-      //   const peer = new RTCPeerConnection();
-
-      //   // Add transceivers for video and audio this allows the viewer to send the offer without having its own tracks
-      //   // peer.addTransceiver("video", { direction: "recvonly" });
-      //   // peer.addTransceiver("audio", { direction: "recvonly" });
-      //   // const dataChannel = peer.createDataChannel("data");
-      //   // dataChannel.onmessage = (event) => {
-      //   //   console.log("dataChannel message", event);
-      //   // };
-
-      //   const video = document.getElementById("video");
-
-      //   peer.ontrack = (event) => {
-      //     console.log("ontrack", event);
-      //     if (event.track.kind === "video") {
-      //       video.srcObject = event.streams[0];
-      //       // video.play();
-      //     }
-      //   };
-
-      //   peer.onicecandidate = (event) => {
-      //     if (event.candidate) {
-      //       ws.send(
-      //         JSON.stringify({
-      //           type: "candidate",
-      //           candidate: event.candidate,
-      //           id: id,
-      //           member_type: "viewer",
-      //         }),
-      //       );
-      //       messages.innerHTML += `<p>sent candidate</p>`;
-      //     }
-      //   };
-
-      //   peer.oniceconnectionstatechange = (event) => {
-      //     console.log("oniceconnectionstatechange", event);
-      //   };
-
-      //   peer.onnegotiationneeded = (event) => {
-      //     console.log("onnegotiationneeded", event);
-      //   };
-
-      //   ws.onopen = () => {
-      //     console.log("connected to server");
-      //     messages.innerHTML += `<p>connected to server</p>`;
-
-      //     ws.send(
-      //       JSON.stringify({
-      //         type: "join_room",
-      //         room: "test",
-      //         id: id,
-      //         member_type: "viewer",
-      //       }),
-      //     );
-      //   };
-
-      //   ws.onmessage = async (event) => {
-      //     const messages = document.getElementById("messages");
-      //     messages.innerHTML += `<p>${event.type}</p>`;
-      //     const data = JSON.parse(event.data);
-      //     if (data.type === "signalling_ready") {
-      //       console.log("signalling ready");
-      //       messages.innerHTML += `<p>signalling ready</p>`;
-      //       peer.createOffer({
-      //         iceRestart: false,
-      //         offerToReceiveAudio: true,
-      //         offerToReceiveVideo: true,
-      //       }).then((offer) => {
-      //         peer.setLocalDescription(offer);
-      //         ws.send(
-      //           JSON.stringify({
-      //             type: "offer",
-      //             sdp: offer.sdp,
-      //             id: id,
-      //           }),
-      //         );
-      //       });
-      //     } else if (data.type === "answer") {
-      //       peer.setRemoteDescription(
-      //         new RTCSessionDescription({
-      //           type: "answer",
-      //           sdp: data.sdp,
-      //         }),
-      //       );
-      //       messages.innerHTML += `<p>received answer</p>`;
-      //     } else if (data.type === "candidate") {
-      //       messages.innerHTML += `<p>received candidate</p>`;
-      //       await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
-      //     } else if (data.type === "offer") {
-      //       messages.innerHTML += `<p>received offer</p>`;
-      //       peer.setRemoteDescription(
-      //         new RTCSessionDescription({
-      //           type: "offer",
-      //           sdp: data.sdp,
-      //         }),
-      //       );
-      //       peer.createAnswer({
-      //         iceRestart: false,
-      //         offerToReceiveAudio: true,
-      //         offerToReceiveVideo: true,
-      //       }).then((answer) => {
-      //         peer.setLocalDescription(answer);
-      //         ws.send(
-      //           JSON.stringify({
-      //             type: "answer",
-      //             sdp: answer.sdp,
-      //             id: id,
-      //           }),
-      //         );
-      //         messages.innerHTML += `<p>sent answer</p>`;
-      //       });
-      //     }
-      //   };
-
-      //   // setTimeout(() => {
-
-      //   // }, 1000);
-      // };
-      // main();
     </script>
   </body>
 </html>

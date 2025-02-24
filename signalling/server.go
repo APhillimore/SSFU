@@ -42,6 +42,8 @@ func (s *WebSocketWebRTCSignallingServer) HandleWsSignalling(w http.ResponseWrit
 	s.connections[id] = conn
 	s.connectionsMu.Unlock()
 
+	log.Println("New connection:", id)
+
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{URLs: []string{"stun:stun.l.google.com:19302"}},
@@ -54,7 +56,22 @@ func (s *WebSocketWebRTCSignallingServer) HandleWsSignalling(w http.ResponseWrit
 		return
 	}
 
-	NewPerfectNegotiation(pc, conn, true)
+	pn := NewPerfectNegotiation(pc, conn, true)
+	for {
+		mt, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Println("error reading message:", err)
+			break
+		}
+		log.Println("message:", string(message))
+		if mt == websocket.TextMessage {
+			pn.handleMessage(message)
+		}
+		if mt == websocket.CloseMessage {
+			pc.Close()
+			break
+		}
+	}
 
 }
 
