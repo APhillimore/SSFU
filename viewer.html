@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Viewer</title>
+  </head>
+  <body>
+    <h1>Viewer</h1>
+    <div id="videos"></div>
+    <div id="messages"></div>
+    <script type="module">
+      import perfectNegotiation from "./perfect-negotiation.js";
+      const wsUrl = "ws://localhost:8081/signalling?type=viewer";
+      const ws = new WebSocket(wsUrl);
+      const peer = new RTCPeerConnection();
+      const { peerNegotiation, sendOffer } = perfectNegotiation({
+        signalServer: ws,
+        isPolite: false,
+        peerConnection: peer,
+        offerOptions: {
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
+        },
+      });
+      peer.ontrack = (event) => {
+        console.log("ontrack", event);
+        if (event.track.kind === "video") {
+          const videoElement = document.createElement("video");
+          videoElement.id = event.track.id;
+          videoElement.autoplay = true;
+          videoElement.muted = true;
+          videoElement.srcObject = event.streams[0];
+          window.videos.appendChild(videoElement);
+          videoElement.play();
+          event.track.onended = () => {
+            console.log("track ended");
+            videoElement.srcObject = null;
+          };
+        }
+      };
+      peer.onsignalingstatechange = (event) => {
+        console.log("onsignalingstatechange", event);
+      };
+    </script>
+  </body>
+</html>
