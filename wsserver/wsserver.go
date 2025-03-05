@@ -39,11 +39,7 @@ func (s *WsManager) WebsocketEndpointHandler(w http.ResponseWriter, r *http.Requ
 		}
 
 		if messageType == websocket.TextMessage {
-			s.OnMessageHandlers.mu.RLock()
-			for _, handler := range s.OnMessageHandlers.handlers {
-				handler.handler(message)
-			}
-			s.OnMessageHandlers.mu.RUnlock()
+			s.OnMessageHandlers.Call(message)
 		}
 		if messageType == websocket.CloseMessage {
 			// shutdown connection
