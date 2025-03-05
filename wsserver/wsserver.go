@@ -47,12 +47,3 @@ func (s *WsManager) WebsocketEndpointHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 }
-
-// Add ID getter methods to existing handler types
-func (h *WsMessageHandler) GetID() string {
-	return h.id
-}
-
-func (h *WsCloseHandler) GetID() string {
-	return h.id
-}
