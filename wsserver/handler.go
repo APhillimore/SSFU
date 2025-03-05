@@ -9,6 +9,7 @@ import (
 
 type Handler interface {
 	ID() string
+	Call(args any)
 }
 
 type WsHandler struct {
@@ -33,6 +34,12 @@ func NewWsMessageHandler(handlerFunction func(message []byte)) *WsMessageHandler
 	}
 }
 
+func (h *WsMessageHandler) Call(args any) {
+	if message, ok := args.([]byte); ok {
+		h.handler(message)
+	}
+}
+
 type WsCloseHandler struct {
 	WsHandler
 	handler func()
@@ -44,6 +51,12 @@ func NewWsCloseHandler(handlerFunction func()) *WsCloseHandler {
 			id: uuid.New().String(),
 		},
 		handler: handlerFunction,
+	}
+}
+
+func (h *WsCloseHandler) Call(args any) {
+	if args == nil {
+		h.handler()
 	}
 }
 
@@ -73,4 +86,12 @@ func (hl *handlerList[T]) Count() int {
 	hl.mu.RLock()
 	defer hl.mu.RUnlock()
 	return len(hl.handlers)
+}
+
+func (hl *handlerList[T]) Call(args any) {
+	hl.mu.RLock()
+	defer hl.mu.RUnlock()
+	for _, h := range hl.handlers {
+		h.Call(args)
+	}
 }
