@@ -1,7 +1,11 @@
 package wsserver
 
 import (
+	"errors"
+	"reflect"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -9,7 +13,7 @@ import (
 
 type Handler interface {
 	ID() string
-	Call(args any)
+	Call(args ...any) error
 }
 
 type WsHandler struct {
@@ -22,10 +26,10 @@ func (h *WsHandler) ID() string {
 
 type WsMessageHandler struct {
 	WsHandler
-	handler func(message []byte)
+	handler func(connection *WsConnection, message []byte) error
 }
 
-func NewWsMessageHandler(handlerFunction func(message []byte)) *WsMessageHandler {
+func NewWsMessageHandler(handlerFunction func(connection *WsConnection, message []byte) error) *WsMessageHandler {
 	return &WsMessageHandler{
 		WsHandler: WsHandler{
 			id: uuid.New().String(),
@@ -34,18 +38,28 @@ func NewWsMessageHandler(handlerFunction func(message []byte)) *WsMessageHandler
 	}
 }
 
-func (h *WsMessageHandler) Call(args any) {
-	if message, ok := args.([]byte); ok {
-		h.handler(message)
+func (h *WsMessageHandler) Call(args ...any) error {
+	if len(args) != 2 {
+		return errors.New("expected 2 argument, got " + strconv.Itoa(len(args)))
 	}
+	connection, ok := args[0].(*WsConnection)
+	if !ok {
+		return errors.New("expected *WsConnection, got " + reflect.TypeOf(args[0]).String())
+	}
+	message, ok := args[1].([]byte)
+	if !ok {
+		return errors.New("expected []byte, got " + reflect.TypeOf(args[1]).String())
+	}
+	h.handler(connection, message)
+	return nil
 }
 
 type WsCloseHandler struct {
 	WsHandler
-	handler func()
+	handler func(connection *WsConnection) error
 }
 
-func NewWsCloseHandler(handlerFunction func()) *WsCloseHandler {
+func NewWsCloseHandler(handlerFunction func(connection *WsConnection) error) *WsCloseHandler {
 	return &WsCloseHandler{
 		WsHandler: WsHandler{
 			id: uuid.New().String(),
@@ -54,10 +68,42 @@ func NewWsCloseHandler(handlerFunction func()) *WsCloseHandler {
 	}
 }
 
-func (h *WsCloseHandler) Call(args any) {
-	if args == nil {
-		h.handler()
+func (h *WsCloseHandler) Call(args ...any) error {
+	if len(args) != 1 {
+		return errors.New("expected 1 argument, got " + strconv.Itoa(len(args)))
 	}
+	connection, ok := args[0].(*WsConnection)
+	if !ok {
+		return errors.New("expected *WsConnection, got " + reflect.TypeOf(args[0]).String())
+	}
+	h.handler(connection)
+	return nil
+}
+
+type WsConnectionHandler struct {
+	WsHandler
+	handler func(connection *WsConnection) error
+}
+
+func NewWsConnectionHandler(handlerFunction func(connection *WsConnection) error) *WsConnectionHandler {
+	return &WsConnectionHandler{
+		WsHandler: WsHandler{
+			id: uuid.New().String(),
+		},
+		handler: handlerFunction,
+	}
+}
+
+func (h *WsConnectionHandler) Call(args ...any) error {
+	if len(args) != 1 {
+		return errors.New("expected 1 argument, got " + strconv.Itoa(len(args)))
+	}
+	connection, ok := args[0].(*WsConnection)
+	if !ok {
+		return errors.New("expected *WsConnection, got " + reflect.TypeOf(args[0]).String())
+	}
+	h.handler(connection)
+	return nil
 }
 
 type handlerList[T Handler] struct {
@@ -88,10 +134,18 @@ func (hl *handlerList[T]) Count() int {
 	return len(hl.handlers)
 }
 
-func (hl *handlerList[T]) Call(args any) {
+func (hl *handlerList[T]) Call(args ...any) error {
+	e := make([]string, 0)
 	hl.mu.RLock()
 	defer hl.mu.RUnlock()
 	for _, h := range hl.handlers {
-		h.Call(args)
+		err := h.Call(args...)
+		if err != nil {
+			e = append(e, err.Error())
+		}
 	}
+	if len(e) > 0 {
+		return errors.New(strings.Join(e, ",\n"))
+	}
+	return nil
 }

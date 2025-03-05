@@ -8,18 +8,20 @@ import (
 )
 
 type WsManager struct {
-	upgrader          websocket.Upgrader
-	Connections       connectionList[*WsConnection]
-	OnMessageHandlers handlerList[*WsMessageHandler]
-	OnCloseHandlers   handlerList[*WsCloseHandler]
+	upgrader             websocket.Upgrader
+	Connections          connectionList[*WsConnection]
+	OnMessageHandlers    handlerList[*WsMessageHandler]
+	OnCloseHandlers      handlerList[*WsCloseHandler]
+	OnConnectionHandlers handlerList[*WsConnectionHandler]
 }
 
 func NewWsManager() *WsManager {
 	return &WsManager{
-		upgrader:          websocket.Upgrader{},
-		Connections:       connectionList[*WsConnection]{},
-		OnMessageHandlers: handlerList[*WsMessageHandler]{},
-		OnCloseHandlers:   handlerList[*WsCloseHandler]{},
+		upgrader:             websocket.Upgrader{},
+		Connections:          connectionList[*WsConnection]{},
+		OnMessageHandlers:    handlerList[*WsMessageHandler]{},
+		OnCloseHandlers:      handlerList[*WsCloseHandler]{},
+		OnConnectionHandlers: handlerList[*WsConnectionHandler]{},
 	}
 }
 
@@ -31,6 +33,9 @@ func (s *WsManager) WebsocketEndpointHandler(w http.ResponseWriter, r *http.Requ
 	}
 	connection := s.Connections.Add(NewWsConnection(conn))
 	defer s.Connections.Remove(connection)
+
+	s.OnConnectionHandlers.Call(connection)
+
 	for {
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
@@ -39,7 +44,7 @@ func (s *WsManager) WebsocketEndpointHandler(w http.ResponseWriter, r *http.Requ
 		}
 
 		if messageType == websocket.TextMessage {
-			s.OnMessageHandlers.Call(message)
+			s.OnMessageHandlers.Call(connection, message)
 		}
 		if messageType == websocket.CloseMessage {
 			// shutdown connection

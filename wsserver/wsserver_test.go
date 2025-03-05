@@ -18,8 +18,9 @@ import (
 func TestWsServer(t *testing.T) {
 	t.Run("Can add/remove on message handler", func(t *testing.T) {
 		wsServer := wsserver.NewWsManager()
-		handler := wsserver.NewWsMessageHandler(func(message []byte) {
+		handler := wsserver.NewWsMessageHandler(func(connection *wsserver.WsConnection, message []byte) error {
 			log.Println(string(message))
+			return nil
 		})
 		wsServer.OnMessageHandlers.Add(handler)
 		assert.Equal(t, 1, wsServer.OnMessageHandlers.Count())
@@ -59,16 +60,18 @@ func TestWsServer(t *testing.T) {
 		wsManager := wsserver.NewWsManager()
 
 		called1 := 0
-		handler1 := wsserver.NewWsMessageHandler(func(message []byte) {
+		handler1 := wsserver.NewWsMessageHandler(func(connection *wsserver.WsConnection, message []byte) error {
 			log.Println(string(message))
 			called1++
+			return nil
 		})
 		wsManager.OnMessageHandlers.Add(handler1)
 
 		called2 := 0
-		handler2 := wsserver.NewWsMessageHandler(func(message []byte) {
+		handler2 := wsserver.NewWsMessageHandler(func(connection *wsserver.WsConnection, message []byte) error {
 			log.Println(string(message))
 			called2++
+			return nil
 		})
 		wsManager.OnMessageHandlers.Add(handler2)
 
