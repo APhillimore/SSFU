@@ -1,4 +1,4 @@
-package signalling
+package peer
 
 import (
 	"encoding/json"

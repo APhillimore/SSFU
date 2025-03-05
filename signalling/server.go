@@ -3,6 +3,9 @@ package signalling
 import (
 	"log"
 	"net/http"
+	"simple-forwarding-unit/peer"
+	"simple-forwarding-unit/rooms"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -14,12 +17,14 @@ type WebSocketWebRTCSignallingServer struct {
 	upgrader             websocket.Upgrader
 	connections          map[string]*websocket.Conn
 	connectionsMu        sync.Mutex
-	peers                map[string]*PerfectPeer
+	peerTypes            map[string]string
+	peers                map[string]*peer.PerfectPeer
 	peersMu              sync.Mutex
 	onNewPeer            map[string]func(peer *webrtc.PeerConnection)
 	onNewPeerMu          sync.Mutex
-	uninitializedPeers   map[string]*PerfectPeer
+	uninitializedPeers   map[string]*peer.PerfectPeer
 	uninitializedPeersMu sync.Mutex
+	roomManager          *rooms.RoomManager
 }
 
 func NewWebSocketWebRTCSignallingServer() *WebSocketWebRTCSignallingServer {
@@ -31,12 +36,14 @@ func NewWebSocketWebRTCSignallingServer() *WebSocketWebRTCSignallingServer {
 		},
 		connections:          make(map[string]*websocket.Conn),
 		connectionsMu:        sync.Mutex{},
-		peers:                make(map[string]*PerfectPeer),
+		peerTypes:            make(map[string]string),
+		peers:                make(map[string]*peer.PerfectPeer),
 		peersMu:              sync.Mutex{},
 		onNewPeer:            make(map[string]func(peer *webrtc.PeerConnection)),
 		onNewPeerMu:          sync.Mutex{},
-		uninitializedPeers:   make(map[string]*PerfectPeer),
+		uninitializedPeers:   make(map[string]*peer.PerfectPeer),
 		uninitializedPeersMu: sync.Mutex{},
+		roomManager:          rooms.NewRoomManager(),
 	}
 }
 
@@ -48,9 +55,12 @@ func (s *WebSocketWebRTCSignallingServer) HandleWsSignalling(w http.ResponseWrit
 	}
 	id := r.URL.Query().Get("id")
 	ptype := r.URL.Query().Get("type")
+	readRooms := r.URL.Query().Get("readRooms")
+	writeRooms := r.URL.Query().Get("writeRooms")
 	if id == "" {
 		id = uuid.New().String()
 	}
+	s.peerTypes[id] = ptype
 	s.connectionsMu.Lock()
 	s.connections[id] = conn
 	s.connectionsMu.Unlock()
@@ -63,10 +73,25 @@ func (s *WebSocketWebRTCSignallingServer) HandleWsSignalling(w http.ResponseWrit
 		},
 	}
 
-	pc, err := NewPerfectPeer(id, conn, &config, true)
+	pc, err := Newpeer.PerfectPeer(id, conn, &config, true)
 	if err != nil {
 		log.Println("error creating peer connection:", err)
 		return
+	}
+
+	if readRooms != "" {
+		roomNames := strings.Split(readRooms, ",")
+		for _, roomName := range roomNames {
+			room := s.roomManager.CreateRoom(roomName)
+			room.AddMember(rooms.NewRoomViewerMember(id, pc))
+		}
+	}
+	if writeRooms != "" {
+		roomNames := strings.Split(writeRooms, ",")
+		for _, roomName := range roomNames {
+			room := s.roomManager.CreateRoom(roomName)
+			room.AddMember(rooms.NewRoomSourceMember(id, pc))
+		}
 	}
 
 	pc.InitializePeerConnection()
@@ -93,6 +118,9 @@ func (s *WebSocketWebRTCSignallingServer) HandleWsSignalling(w http.ResponseWrit
 
 		s.peersMu.Lock()
 		for id, peer := range s.peers {
+			if s.peerTypes[id] == "sourceonly" {
+				continue
+			}
 			if id == pc.ID {
 				continue
 			}
@@ -121,21 +149,23 @@ func (s *WebSocketWebRTCSignallingServer) HandleWsSignalling(w http.ResponseWrit
 	})
 	tracksAdded := false
 	log.Println("Peers:", s.peers)
-	for id, peer := range s.peers {
-		if id == pc.ID {
-			continue
-		}
-		peer.LocalTracksMu.Lock()
-		log.Println("Peer:", peer.ID, "Local tracks:", peer.LocalTracks)
-		for _, track := range peer.LocalTracks {
-			log.Println("Adding track:", track.ID())
-			_, err := pc.AddPeerTrack(track)
-			if err != nil {
-				log.Println("Error adding peer track:", err)
+	if ptype != "sourceonly" {
+		for id, peer := range s.peers {
+			if id == pc.ID {
+				continue
 			}
-			tracksAdded = true
+			peer.LocalTracksMu.Lock()
+			log.Println("Peer:", peer.ID, "Local tracks:", peer.LocalTracks)
+			for _, track := range peer.LocalTracks {
+				log.Println("Adding track:", track.ID())
+				_, err := pc.AddPeerTrack(track)
+				if err != nil {
+					log.Println("Error adding peer track:", err)
+				}
+				tracksAdded = true
+			}
+			peer.LocalTracksMu.Unlock()
 		}
-		peer.LocalTracksMu.Unlock()
 	}
 	log.Println("Tracks added:", tracksAdded)
 	if tracksAdded {
@@ -148,8 +178,6 @@ func (s *WebSocketWebRTCSignallingServer) HandleWsSignalling(w http.ResponseWrit
 		s.uninitializedPeersMu.Unlock()
 
 	}
-
-	// init := false
 
 	pc.AddOnConnectionStateChangeHandler(func(state webrtc.PeerConnectionState) {
 		log.Printf(Red+"Peer %s connection state changed to %v"+Reset, id, state)
@@ -190,29 +218,31 @@ func (s *WebSocketWebRTCSignallingServer) Shutdown() {
 	}
 }
 
-func (s *WebSocketWebRTCSignallingServer) lifeCycleCleanup(pc *PerfectPeer) {
+func (s *WebSocketWebRTCSignallingServer) lifeCycleCleanup(pc *peer.PerfectPeer) {
 	log.Println("Cleaning up peer:", pc.ID)
 	// remove this peer's tracks from all peers
-	pc.LocalTracksMu.Lock()
 	s.peersMu.Lock()
 	s.uninitializedPeersMu.Lock()
 
-	tracks := pc.GetMyTrackIDs()
+	// tracks := pc.GetMyTrackIDs()
 	for _, peer := range s.peers {
 		if peer.ID == pc.ID {
 			continue
 		}
 		removedTracks := false
 		peer.LocalTracksMu.Lock()
-		for _, trackID := range tracks {
-			err := peer.RemoveSendingTrack(trackID)
+		pc.TrackMapMu.Lock()
+		for _, localTrackID := range pc.TrackMap {
+			err := peer.RemoveSendingTrack(localTrackID)
 			if err != nil {
 				log.Println("Error removing track:", err)
+				continue
 			} else {
 				removedTracks = true
 			}
-			log.Println("Removed track:", trackID)
+			log.Println("Removed track:", localTrackID)
 		}
+		pc.TrackMapMu.Unlock()
 		peer.LocalTracksMu.Unlock()
 		if len(peer.GetSenders()) == 0 {
 			s.uninitializedPeers[peer.ID] = peer
@@ -221,16 +251,16 @@ func (s *WebSocketWebRTCSignallingServer) lifeCycleCleanup(pc *PerfectPeer) {
 		}
 	}
 	log.Println("Local tracks:", pc.LocalTracks)
-	pc.LocalTracksMu.Unlock()
 	for _, track := range pc.LocalTracks {
 		pc.RemoveLocalTrack(track.ID())
 	}
-	pc.Close()
+	pc.Shutdown()
 
 	// remove peer
 	delete(s.peers, pc.ID)
 	delete(s.uninitializedPeers, pc.ID)
-	s.peersMu.Unlock()
+	delete(s.peerTypes, pc.ID)
 	s.uninitializedPeersMu.Unlock()
+	s.peersMu.Unlock()
 	log.Println("Peer removed:", pc.ID)
 }

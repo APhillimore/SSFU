@@ -1,4 +1,4 @@
-package signalling
+package peer
 
 import (
 	"fmt"
@@ -15,9 +15,14 @@ import (
 
 type SfuPeer struct {
 	*webrtc.PeerConnection
-	ID                                 string
-	Conn                               *websocket.Conn
-	PeerConfig                         *webrtc.Configuration
+	ID         string
+	Conn       *websocket.Conn
+	PeerConfig *webrtc.Configuration
+	// state 1 active, 0 closing
+	state int
+	// TrackMap maps remote track IDs to local track IDs
+	TrackMap                           map[string]string
+	TrackMapMu                         sync.Mutex
 	LocalTracks                        map[string]*webrtc.TrackLocalStaticRTP
 	LocalTracksMu                      sync.Mutex
 	Negotiating                        bool
@@ -29,6 +34,7 @@ type SfuPeer struct {
 	OnNegotiationNeededHandlers        map[string]func()
 	OnSignalingStateChangeHandlers     map[string]func(signalingState webrtc.SignalingState)
 	OnTrackHandlers                    map[string]func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver)
+	OnLocalTrackHandlers               map[string]func(localTrack *webrtc.TrackLocalStaticRTP)
 	log                                logging.LeveledLogger
 }
 
@@ -43,6 +49,8 @@ func NewSfuPeer(id string, conn *websocket.Conn, PeerConfig *webrtc.Configuratio
 		ID:                                 id,
 		Conn:                               conn,
 		PeerConfig:                         PeerConfig,
+		TrackMap:                           make(map[string]string),
+		TrackMapMu:                         sync.Mutex{},
 		LocalTracks:                        make(map[string]*webrtc.TrackLocalStaticRTP),
 		LocalTracksMu:                      sync.Mutex{},
 		OnConnectionStateChangeHandlers:    make(map[string]func(connectionState webrtc.PeerConnectionState)),
@@ -53,7 +61,9 @@ func NewSfuPeer(id string, conn *websocket.Conn, PeerConfig *webrtc.Configuratio
 		OnNegotiationNeededHandlers:        make(map[string]func()),
 		OnSignalingStateChangeHandlers:     make(map[string]func(signalingState webrtc.SignalingState)),
 		OnTrackHandlers:                    make(map[string]func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver)),
+		OnLocalTrackHandlers:               make(map[string]func(localTrack *webrtc.TrackLocalStaticRTP)),
 		log:                                logging.NewDefaultLoggerFactory().NewLogger("sfu-peer-" + id),
+		state:                              1,
 	}, nil
 }
 
@@ -199,6 +209,16 @@ func (p *SfuPeer) RemoveOnTrackHandler(id string) {
 	delete(p.OnTrackHandlers, id)
 }
 
+func (p *SfuPeer) AddOnLocalTrackHandler(handler func(localTrack *webrtc.TrackLocalStaticRTP)) string {
+	id := uuid.New().String()
+	p.OnLocalTrackHandlers[id] = handler
+	return id
+}
+
+func (p *SfuPeer) RemoveOnLocalTrackHandler(id string) {
+	delete(p.OnLocalTrackHandlers, id)
+}
+
 func (p *SfuPeer) GetMyTrackIDs() []string {
 	receivers := p.GetReceivers()
 	trackIDs := make([]string, 0, len(receivers))
@@ -229,10 +249,11 @@ func (p *SfuPeer) IsAlreadySendingTrack(trackID string) bool {
 	return slices.Contains(p.GetOthersTrackIDs(), trackID)
 }
 
-func (p *SfuPeer) GetTrackByID(trackID string) *webrtc.RTPSender {
+func (p *SfuPeer) GetTrackByID(trackID string) *webrtc.TrackLocalStaticRTP {
 	for _, s := range p.GetSenders() {
 		if s.Track() != nil && s.Track().ID() == trackID {
-			return s
+			track := s.Track()
+			return track.(*webrtc.TrackLocalStaticRTP)
 		}
 	}
 	return nil
@@ -251,29 +272,39 @@ func (p *SfuPeer) RemoveSendingTrack(trackID string) error {
 	return fmt.Errorf("track %s is not being sent by this peer", trackID)
 }
 
+func (p *SfuPeer) GetLocalTrackID(remoteTrackID string) string {
+	return remoteTrackID + "::" + uuid.New().String()
+}
+
 /* Takes a remote track and converts it to a local track. Renegotiation for all peers should be fired following this. */
 func (p *SfuPeer) ConvertRemoteTrackToLocalTrack(remoteTrack *webrtc.TrackRemote) (*webrtc.TrackLocalStaticRTP, error) {
 
-	removeTrackID := remoteTrack.ID()
-
-	if !p.IsMyTrack(removeTrackID) {
-		p.log.Warnf("This track does not belong to this peer %s", removeTrackID)
-		return nil, fmt.Errorf("this track does not belong to this peer %s", removeTrackID)
+	remoteTrackID := remoteTrack.ID()
+	localTrackID := p.GetLocalTrackID(remoteTrackID)
+	p.TrackMapMu.Lock()
+	p.TrackMap[remoteTrackID] = localTrackID
+	p.TrackMapMu.Unlock()
+	if !p.IsMyTrack(remoteTrackID) {
+		p.log.Warnf("This track does not belong to this peer %s", remoteTrackID)
+		return nil, fmt.Errorf("this track does not belong to this peer %s", remoteTrackID)
 	}
 
 	codecCap := remoteTrack.Codec().RTPCodecCapability
 	codecCap.RTCPFeedback = nil // Clear RTCP feedback to avoid compatibility issues
-	localTrack, err := webrtc.NewTrackLocalStaticRTP(codecCap, remoteTrack.ID(), p.ID)
+	localTrack, err := webrtc.NewTrackLocalStaticRTP(codecCap, localTrackID, p.ID)
 
 	p.LocalTracksMu.Lock()
-	p.LocalTracks[removeTrackID] = localTrack
+	p.LocalTracks[localTrackID] = localTrack
 	p.LocalTracksMu.Unlock()
 
 	// Start copying packets from the remote track to the local track
 	go func(remoteTrack *webrtc.TrackRemote, localTrack *webrtc.TrackLocalStaticRTP) {
 		rtpBuf := make([]byte, 1500)
-		p.log.Infof("Copying packets from remote track to local track: %s", removeTrackID)
+		p.log.Infof("Copying packets from remote track [%s] to local track [%s]", remoteTrackID, localTrackID)
 		for {
+			if p.state == 0 {
+				return
+			}
 			i, _, err := remoteTrack.Read(rtpBuf)
 			if err != nil {
 				p.log.Errorf(" Error reading from remote track: %s", err)
@@ -292,6 +323,10 @@ func (p *SfuPeer) ConvertRemoteTrackToLocalTrack(remoteTrack *webrtc.TrackRemote
 	go func() {
 		for {
 			time.Sleep(time.Second * 3)
+			if p.state == 0 {
+				p.log.Infof("Peer %s is closing, stopping PLI", p.ID)
+				return
+			}
 			err := p.WriteRTCP([]rtcp.Packet{
 				&rtcp.PictureLossIndication{
 					MediaSSRC: uint32(remoteTrack.SSRC()),
@@ -304,16 +339,26 @@ func (p *SfuPeer) ConvertRemoteTrackToLocalTrack(remoteTrack *webrtc.TrackRemote
 		}
 	}()
 
+	for _, handler := range p.OnLocalTrackHandlers {
+		handler(localTrack)
+	}
+
 	return localTrack, err
 }
 
-func (p *SfuPeer) RemoveLocalTrack(trackID string) {
+func (p *SfuPeer) RemoveLocalTrack(remoteTrackID string) {
 	p.LocalTracksMu.Lock()
-	delete(p.LocalTracks, trackID)
+	delete(p.LocalTracks, remoteTrackID)
 	p.LocalTracksMu.Unlock()
+	p.TrackMapMu.Lock()
+	delete(p.TrackMap, remoteTrackID)
+	p.TrackMapMu.Unlock()
 }
 
 func (p *SfuPeer) AddPeerTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error) {
+	if p.state == 0 {
+		return nil, fmt.Errorf("peer is closing")
+	}
 	trackID := track.ID()
 	if p.IsMyTrack(trackID) {
 		p.log.Warnf("This track belongs to this peer %s", trackID)
@@ -324,4 +369,46 @@ func (p *SfuPeer) AddPeerTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSe
 		return nil, fmt.Errorf("this track is already being sent by this peer %s", trackID)
 	}
 	return p.AddTrack(track)
+}
+
+func (p *SfuPeer) Shutdown() {
+	p.state = 0
+	p.TrackMapMu.Lock()
+	defer p.TrackMapMu.Unlock()
+	for _, localTrackID := range p.TrackMap {
+		p.RemoveLocalTrack(localTrackID)
+	}
+	p.Close()
+}
+
+func (p *SfuPeer) AddTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error) {
+	if p.state == 0 {
+		return nil, fmt.Errorf("peer is closing")
+	}
+	trackID := track.ID()
+	if p.IsMyTrack(trackID) {
+		p.log.Warnf("This track belongs to this peer %s", trackID)
+		return nil, fmt.Errorf("this track belongs to this peer %s", trackID)
+	}
+	if p.IsAlreadySendingTrack(trackID) {
+		p.log.Warnf("This track is already being sent by this peer %s", trackID)
+		return nil, fmt.Errorf("this track is already being sent by this peer %s", trackID)
+	}
+	p.Conn.WriteJSON(map[string]interface{}{
+		"type": "track_added",
+		"id":   trackID,
+	})
+	return p.AddTrack(track)
+}
+
+func (p *SfuPeer) RemoveTrack(track *webrtc.TrackLocalStaticRTP) error {
+	if p.state == 0 {
+		return fmt.Errorf("peer is closing")
+	}
+	trackID := track.ID()
+	p.Conn.WriteJSON(map[string]interface{}{
+		"type": "track_removed",
+		"id":   trackID,
+	})
+	return p.RemoveTrack(track)
 }
