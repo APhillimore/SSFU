@@ -1,6 +1,7 @@
 package webrtcnegotiation
 
 import (
+	"errors"
 	"slices"
 	"sync"
 
@@ -66,6 +67,18 @@ func (hl *negotiatorList[T]) Remove(negotiator T) bool {
 		return n.ID() == negotiator.ID()
 	})
 	return len(hl.negotiators) < originalLen
+}
+
+func (hl *negotiatorList[T]) GetByID(id string) (T, error) {
+	hl.mu.RLock()
+	defer hl.mu.RUnlock()
+	for _, n := range hl.negotiators {
+		if n.ID() == id {
+			return n, nil
+		}
+	}
+	var zero T
+	return zero, errors.New("negotiator not found")
 }
 
 func (hl *negotiatorList[T]) Count() int {

@@ -48,7 +48,12 @@ func main() {
 		if err != nil {
 			return errors.New("error unmarshalling message: " + err.Error())
 		}
-		log.Println("hello", msg)
+		// TODO: Handle Negotiation
+		// negotiator, err := webRtcSignallingWsManager.Negotiators.GetByID(connection.ID())
+		// if err != nil {
+		// 	return errors.New("error getting negotiator: " + err.Error())
+		// }
+		// negotiator.HandleAnswer()
 		return nil
 	}))
 

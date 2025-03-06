@@ -57,23 +57,3 @@ type IceCandidate struct {
 	SDPMLineIndex    uint16 `json:"sdpMLineIndex"`
 	UsernameFragment string `json:"usernameFragment,omitempty"`
 }
-
-// type Signalling struct {
-// 	peers map[string]*webrtc.PeerConnection
-// }
-
-// func NewSignalling() *Signalling {
-// 	return &Signalling{}
-// }
-
-// func (s *Signalling) AddPeer(id string, peer *webrtc.PeerConnection) {
-// 	s.peers[id] = peer
-// }
-
-// func (s *Signalling) RemovePeer(id string) {
-// 	delete(s.peers, id)
-// }
-
-// func (s *Signalling) GetPeer(id string) *Peer {
-// 	return s.peers[id]
-// }

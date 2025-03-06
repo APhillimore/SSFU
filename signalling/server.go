@@ -24,7 +24,6 @@ type WebSocketWebRTCSignallingServer struct {
 	onNewPeerMu          sync.Mutex
 	uninitializedPeers   map[string]*peer.PerfectPeer
 	uninitializedPeersMu sync.Mutex
-	roomManager          *rooms.RoomManager
 }
 
 func NewWebSocketWebRTCSignallingServer() *WebSocketWebRTCSignallingServer {
@@ -43,7 +42,6 @@ func NewWebSocketWebRTCSignallingServer() *WebSocketWebRTCSignallingServer {
 		onNewPeerMu:          sync.Mutex{},
 		uninitializedPeers:   make(map[string]*peer.PerfectPeer),
 		uninitializedPeersMu: sync.Mutex{},
-		roomManager:          rooms.NewRoomManager(),
 	}
 }
 
