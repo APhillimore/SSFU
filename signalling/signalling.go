@@ -6,6 +6,22 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
+type MessageType string
+
+const (
+	MessageTypeJoinRoom  MessageType = "join-room"
+	MessageTypeOffer     MessageType = "offer"
+	MessageTypeAnswer    MessageType = "answer"
+	MessageTypeCandidate MessageType = "candidate"
+)
+
+type JoinRoomStruct struct {
+	Type       string `json:"type"`
+	RoomID     string `json:"roomId"`
+	MemberID   string `json:"memberId"`
+	MemberType string `json:"memberType"`
+}
+
 var (
 	Red   = "\033[31m"
 	Green = "\033[32m"

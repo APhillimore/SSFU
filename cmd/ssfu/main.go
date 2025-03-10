@@ -9,10 +9,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"simple-forwarding-unit/signalling"
 	"simple-forwarding-unit/webrtcnegotiation"
+	"simple-forwarding-unit/webrtcpeer"
 	"simple-forwarding-unit/wsserver"
 	"syscall"
 	"time"
+
+	"github.com/aggregator-cloud/rooms"
+	"github.com/pion/webrtc/v3"
 )
 
 var (
@@ -36,24 +41,39 @@ func main() {
 
 	webRtcWsManager := wsserver.NewWsManager()
 	webRtcSignallingWsManager := webrtcnegotiation.NewWebRTCNegotiationManager()
-
+	roomManager := rooms.NewRoomManager()
+	peerManager := webrtcpeer.NewPeerManager()
 	webRtcWsManager.OnConnectionHandlers.Add(wsserver.NewWsConnectionHandler(func(connection *wsserver.WsConnection) error {
-		webRtcSignallingWsManager.Negotiators.Add(webrtcnegotiation.NewWebRtcNegotiator(connection.ID(), true))
-		return nil
-	}))
-
-	webRtcWsManager.OnMessageHandlers.Add(wsserver.NewWsMessageHandler(func(connection *wsserver.WsConnection, message []byte) error {
-		msg := map[string]interface{}{}
-		err := json.Unmarshal(message, &msg)
+		peer, err := webrtcpeer.NewSfuPeer(connection.ID(), &webrtc.Configuration{})
 		if err != nil {
-			return errors.New("error unmarshalling message: " + err.Error())
+			return err
 		}
-		// TODO: Handle Negotiation
-		// negotiator, err := webRtcSignallingWsManager.Negotiators.GetByID(connection.ID())
-		// if err != nil {
-		// 	return errors.New("error getting negotiator: " + err.Error())
-		// }
-		// negotiator.HandleAnswer()
+		_, err = peerManager.AddPeer(peer)
+		if err != nil {
+			return err
+		}
+
+		negotiatorConfig := webrtcnegotiation.WebRTCNegotiatorConfig{
+			ID:                         connection.ID(),
+			IsPolite:                   true,
+			HandleSetRemoteDescription: peer.SetRemoteDescription,
+			HandleSetLocalDescription:  peer.SetLocalDescription,
+			HandleCreateOffer: func() (webrtc.SessionDescription, error) {
+				return peer.CreateOffer(nil)
+			},
+			HandleAddICECandidate: peer.AddICECandidate,
+			HandleSendOffer: func(description webrtc.SessionDescription) error {
+				return connection.Conn().WriteJSON(map[string]interface{}{
+					"type":        "offer",
+					"description": description,
+				})
+			},
+		}
+
+		negotiator := webRtcSignallingWsManager.Negotiators.Add(webrtcnegotiation.NewWebRtcNegotiator(negotiatorConfig))
+		peer.AddOnICECandidateHandler(func(candidate *webrtc.ICECandidate) {
+			negotiator.HandleCandidate(candidate)
+		})
 		return nil
 	}))
 
@@ -64,10 +84,39 @@ func main() {
 		if err != nil {
 			return errors.New("error unmarshalling message: " + err.Error())
 		}
+
+		msgType := msg["type"]
+		if msgType == "join-room" {
+			decoded := signalling.JoinRoomStruct{}
+			err := json.Unmarshal(message, &decoded)
+			if err != nil {
+				return errors.New("error unmarshalling message: " + err.Error())
+			}
+			// Create message structs
+			room := roomManager.CreateRoom(decoded.RoomID)
+			member := rooms.NewRoomMember(decoded.MemberID, decoded.MemberType)
+			room.AddMember(member)
+		}
+
+		peer, err := peerManager.GetPeer(connection.ID())
+		if err != nil {
+			return errors.New("peer not found")
+		}
+		negotiator, err := webRtcSignallingWsManager.Negotiators.GetByID(connection.ID())
+		if err != nil {
+			return errors.New("negotiator not found")
+		}
+
 		if _, ok := msg["description"]; ok {
-			// webRtcSignallingWsManager.HandleOffer(msg)
+			description := msg["description"].(*webrtc.SessionDescription)
+			if description.Type == webrtc.SDPTypeOffer {
+				negotiator.HandleOffer(description, (*peer).SignalingState())
+			} else {
+				negotiator.HandleAnswer(description)
+			}
 			log.Println("offer or answer ", msg)
 		}
+
 		return nil
 	}))
 

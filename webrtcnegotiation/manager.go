@@ -4,48 +4,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
-
-	"github.com/pion/webrtc/v3"
 )
-
-type IWebRTCNegotiator interface {
-	ID() string
-	// OnOffer()
-	// OnAnswer()
-	// OnCandidate()
-	// HandleOffer()
-	// HandlerAnswer()
-}
-
-type WebRtcNegotiator struct {
-	isNegotiating bool
-	isPolite      bool
-	id            string
-}
-
-func NewWebRtcNegotiator(id string, isPolite bool) *WebRtcNegotiator {
-	return &WebRtcNegotiator{
-		isPolite:      isPolite,
-		isNegotiating: false,
-		id:            id,
-	}
-}
-
-func (n *WebRtcNegotiator) ID() string {
-	return n.id
-}
-
-func (n *WebRtcNegotiator) HandleOffer(offer webrtc.SessionDescription) {
-	if n.isNegotiating {
-		return
-	}
-}
-
-func (n *WebRtcNegotiator) HandleAnswer(offer webrtc.SessionDescription) {
-	if n.isNegotiating {
-		return
-	}
-}
 
 type negotiatorList[T IWebRTCNegotiator] struct {
 	negotiators []T

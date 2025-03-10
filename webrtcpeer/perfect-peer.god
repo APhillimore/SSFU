@@ -17,27 +17,27 @@ type PerfectPeer struct {
 	makingOfferMu sync.Mutex
 }
 
-func NewPerfectPeer(id string, Conn *websocket.Conn, PeerConfig *webrtc.Configuration, isPolite bool) (*PerfectPeer, error) {
-	sfuPeer, err := NewSfuPeer(id, Conn, PeerConfig)
-	if err != nil {
-		log.Println("Error creating sfu peer:", err)
-		return nil, err
-	}
-	return &PerfectPeer{SfuPeer: sfuPeer}, nil
-}
+// func NewPerfectPeer(id string, Conn *websocket.Conn, PeerConfig *webrtc.Configuration, isPolite bool) (*PerfectPeer, error) {
+// 	sfuPeer, err := NewSfuPeer(id, Conn, PeerConfig)
+// 	if err != nil {
+// 		log.Println("Error creating sfu peer:", err)
+// 		return nil, err
+// 	}
+// 	return &PerfectPeer{SfuPeer: sfuPeer}, nil
+// }
 
 // Initialize WebRTC
-func (p *PerfectPeer) Negotiate() {
-	// Handle negotiation needed
-	p.AddOnNegotiationNeededHandler(func() {
-		log.Println("Negotiation needed")
-	})
+// func (p *PerfectPeer) Negotiate() {
+// 	// Handle negotiation needed
+// 	p.AddOnNegotiationNeededHandler(func() {
+// 		log.Println("Negotiation needed")
+// 	})
 
-	p.AddOnTrackHandler(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		log.Println("onTrack", track.ID())
-	})
+// 	p.AddOnTrackHandler(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+// 		log.Println("onTrack", track.ID())
+// 	})
 
-}
+// }
 
 func (p *PerfectPeer) SendOffer() {
 	if p.makingOffer {

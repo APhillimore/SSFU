@@ -1,4 +1,4 @@
-package peer
+package webrtcpeer
 
 import (
 	"fmt"
@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -15,8 +14,8 @@ import (
 
 type SfuPeer struct {
 	*webrtc.PeerConnection
-	ID         string
-	Conn       *websocket.Conn
+	id string
+	// Conn       *websocket.Conn
 	PeerConfig *webrtc.Configuration
 	// state 1 active, 0 closing
 	state int
@@ -38,16 +37,16 @@ type SfuPeer struct {
 	log                                logging.LeveledLogger
 }
 
-func NewSfuPeer(id string, conn *websocket.Conn, PeerConfig *webrtc.Configuration) (*SfuPeer, error) {
+func NewSfuPeer(id string, PeerConfig *webrtc.Configuration) (*SfuPeer, error) {
 	peer, err := webrtc.NewPeerConnection(*PeerConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SfuPeer{
-		PeerConnection:                     peer,
-		ID:                                 id,
-		Conn:                               conn,
+		PeerConnection: peer,
+		id:             id,
+		// Conn:                               conn,
 		PeerConfig:                         PeerConfig,
 		TrackMap:                           make(map[string]string),
 		TrackMapMu:                         sync.Mutex{},
@@ -65,6 +64,10 @@ func NewSfuPeer(id string, conn *websocket.Conn, PeerConfig *webrtc.Configuratio
 		log:                                logging.NewDefaultLoggerFactory().NewLogger("sfu-peer-" + id),
 		state:                              1,
 	}, nil
+}
+
+func (p *SfuPeer) ID() string {
+	return p.id
 }
 
 func (p *SfuPeer) RecreatePeerConnection() (*webrtc.PeerConnection, error) {
@@ -291,7 +294,7 @@ func (p *SfuPeer) ConvertRemoteTrackToLocalTrack(remoteTrack *webrtc.TrackRemote
 
 	codecCap := remoteTrack.Codec().RTPCodecCapability
 	codecCap.RTCPFeedback = nil // Clear RTCP feedback to avoid compatibility issues
-	localTrack, err := webrtc.NewTrackLocalStaticRTP(codecCap, localTrackID, p.ID)
+	localTrack, err := webrtc.NewTrackLocalStaticRTP(codecCap, localTrackID, p.id)
 
 	p.LocalTracksMu.Lock()
 	p.LocalTracks[localTrackID] = localTrack
@@ -324,7 +327,7 @@ func (p *SfuPeer) ConvertRemoteTrackToLocalTrack(remoteTrack *webrtc.TrackRemote
 		for {
 			time.Sleep(time.Second * 3)
 			if p.state == 0 {
-				p.log.Infof("Peer %s is closing, stopping PLI", p.ID)
+				p.log.Infof("Peer %s is closing, stopping PLI", p.id)
 				return
 			}
 			err := p.WriteRTCP([]rtcp.Packet{
@@ -394,10 +397,10 @@ func (p *SfuPeer) AddTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender
 		p.log.Warnf("This track is already being sent by this peer %s", trackID)
 		return nil, fmt.Errorf("this track is already being sent by this peer %s", trackID)
 	}
-	p.Conn.WriteJSON(map[string]interface{}{
-		"type": "track_added",
-		"id":   trackID,
-	})
+	// p.Conn.WriteJSON(map[string]interface{}{
+	// 	"type": "track_added",
+	// 	"id":   trackID,
+	// })
 	return p.AddTrack(track)
 }
 
@@ -405,10 +408,10 @@ func (p *SfuPeer) RemoveTrack(track *webrtc.TrackLocalStaticRTP) error {
 	if p.state == 0 {
 		return fmt.Errorf("peer is closing")
 	}
-	trackID := track.ID()
-	p.Conn.WriteJSON(map[string]interface{}{
-		"type": "track_removed",
-		"id":   trackID,
-	})
+	// trackID := track.ID()
+	// p.Conn.WriteJSON(map[string]interface{}{
+	// 	"type": "track_removed",
+	// 	"id":   trackID,
+	// })
 	return p.RemoveTrack(track)
 }
